@@ -445,12 +445,16 @@ export function Graph() {
   };
   useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload graph data when the edge-weight filter changes (cheap,
-  // backend just adds a WHERE clause).
+  // Reload graph data when any server-side filter changes — minEdgeWeight,
+  // minMentions and the type-checkbox set are all passed to /api/graph
+  // and need a refetch to take effect. Before this hook covered them,
+  // only minEdgeWeight triggered a reload; the Mindesterwähnungen slider
+  // and ENTITÄTSTYPEN checkboxes silently changed local state without
+  // refetching, so the visualisation stayed stuck on initial-load values.
   useEffect(() => {
     if (data) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [minEdgeWeight]);
+  }, [minEdgeWeight, minMentions, typesEnabled]);
 
   // Konzentrik: edges cross all rings and are visual noise → default OFF.
   // Cluster: edges show inter-cluster structure → default ON.
