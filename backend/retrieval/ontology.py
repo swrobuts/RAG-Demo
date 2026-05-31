@@ -160,9 +160,33 @@ QUERY-STRATEGIE-REGELN (verbindlich):
        ?succ rdfs:label ?n .
      } LIMIT 10
 
-4. IMMER:
+5. FÜR „WER IST X?" / „WAS IST X?" (Profil-Fragen — RICHER columns!):
+   Eine einspaltige Antwort wie nur `?fullname` ist hier zu dünn. IMMER
+   zusätzlich Typ, Rolle und Beschreibung mitziehen, damit das antwortende
+   LLM kontextualisieren kann („Wer ist Gil?" → CEO 1996–1997, vollständiger
+   Name etc.). OPTIONAL-Blöcke verwenden, falls einzelne Felder fehlen:
+     PREFIX apple: <http://uc5.butscher.cloud/apple#>
+     PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+     PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+     SELECT DISTINCT
+       (GROUP_CONCAT(DISTINCT STR(?lbl); SEPARATOR=" | ") AS ?labels)
+       (GROUP_CONCAT(DISTINCT STR(?t); SEPARATOR=", ") AS ?types)
+       (SAMPLE(?r)    AS ?role)
+       (SAMPLE(?desc) AS ?description)
+     WHERE {
+       ?p rdfs:label ?match .
+       FILTER(REGEX(STR(?match), "Gil", "i"))   # Suchbegriff aus der Frage
+       OPTIONAL { ?p rdfs:label ?lbl . }
+       OPTIONAL { ?p a ?t . FILTER(STRSTARTS(STR(?t), "http://uc5.butscher.cloud/apple#")) }
+       OPTIONAL { ?p apple:role ?r . }
+       OPTIONAL { ?p apple:description ?desc . }
+       FILTER NOT EXISTS { ?p a apple:UnrelatedPerson }
+     }
+     GROUP BY ?p LIMIT 5
+
+6. IMMER:
    - rdfs:label für lesbare Namen
-   - LIMIT 30 am Ende
+   - LIMIT 30 am Ende (oder LIMIT 5 bei Profil-Fragen mit OPTIONAL-Blöcken)
    - PREFIX-Block am Anfang nicht vergessen (apple, rdf, rdfs, foaf, owl)
 
 Frage: __QUERY__
@@ -209,7 +233,7 @@ class OntologyRAG:
         sparql_exec_ms = (time.perf_counter() - t0) * 1000
 
         # ── Phase 3: turn bindings into chunks + supplementary text chunks ──
-        chunks, sources = self._bindings_to_chunks(bindings)
+        chunks, sources = self._bindings_to_chunks(bindings, query=query)
 
         # ── Phase 4: text fallback when SPARQL returned nothing ──
         #
@@ -307,12 +331,19 @@ class OntologyRAG:
         return _ensure_prefixes(sparql)
 
     def _bindings_to_chunks(
-        self, bindings: list[dict],
+        self, bindings: list[dict], query: str = "",
     ) -> tuple[list[Chunk], list[SourceRef]]:
-        """Format SPARQL bindings as readable chunks. Also pull 1-2 UE1
-        chunks per distinct entity name found in the bindings, so the final
-        answering LLM has both the structured tripel-fact AND supporting
-        natural-language context."""
+        """Format SPARQL bindings as readable chunks. Also pull supplementary
+        UE1 chunks for (a) each distinct entity name from the bindings and
+        (b) proper-noun-ish tokens from the original NL query — so the
+        answering LLM has both structured triple-facts AND Wikipedia context.
+
+        Hebel B+C: When the bindings are "thin" (= only labels, no apple:role
+        / description / type column), we double the per-query cap and lean
+        harder on the query terms — that's exactly the "Wer ist Gil?" case
+        where the SPARQL came back with just "Gilbert Frank Amelio" and the
+        article only mentions him as "Gil Amelio".
+        """
         if not bindings:
             return [], []
 
@@ -328,6 +359,15 @@ class OntologyRAG:
             chunk_id=None,
         )
         chunks: list[Chunk] = [facts_chunk]
+
+        # Hebel C — "thin binding" heuristic: if no column hints at a rich
+        # property (description/role/type/comment/abstract), the answering LLM
+        # would have only labels. Augment harder in that case.
+        rich_keys = {"desc", "description", "comment", "abstract",
+                     "role", "type", "types"}
+        is_thin = not any(
+            any(k.lower() in rich_keys for k in b.keys()) for b in bindings
+        )
 
         # Collect candidate names (any binding value that's not a URI and
         # has reasonable length).
@@ -346,9 +386,21 @@ class OntologyRAG:
             if len(names) >= 10:
                 break
 
-        # Pull supplementary UE1 chunks for those names.
+        # Hebel B — also feed proper-noun-ish tokens from the query itself
+        # into the UE1 search. This is what closes the "Gilbert Frank Amelio"
+        # vs "Gil Amelio" gap: the SPARQL pulled the long name, but the
+        # German article only ever mentions the short form.
+        for term in _extract_query_anchors(query):
+            if term not in names:
+                names.append(term)
+            if len(names) >= 14:
+                break
+
+        # Pull supplementary UE1 chunks for those names. Cap doubles for
+        # thin bindings so the answering LLM gets enough context.
         settings = get_settings()
-        cap = settings.ue4_max_chunks_per_entity * 4  # global cap on extras
+        per_entity = settings.ue4_max_chunks_per_entity
+        cap = per_entity * (8 if is_thin else 4)
         if names:
             params: dict[str, object] = {"cap": cap}
             ilike_conds = []
@@ -378,6 +430,44 @@ class OntologyRAG:
             for c in chunks
         ]
         return chunks, sources
+
+
+# Common German wh-words/auxiliaries that look proper-noun-ish to a naive
+# regex but carry no entity content. Excluded from anchor extraction.
+_QUERY_STOPWORDS = {
+    "Wer", "Wie", "Was", "Wo", "Wann", "Warum", "Welche", "Welcher",
+    "Welches", "Wessen", "Wem", "Wen",
+    "Der", "Die", "Das", "Den", "Dem", "Des",
+    "Ein", "Eine", "Einen", "Einem", "Einer", "Eines",
+    "Und", "Oder", "Aber", "Nicht", "Auch", "Noch", "Schon",
+    "Sein", "Seine", "Ihr", "Ihre", "Mein", "Meine", "Dein", "Deine",
+    "Name", "Vollständiger", "Vollständige", "Vollständigen",
+    "Apple", "Apples",  # ubiquitous in this corpus → useless as anchor
+}
+
+
+def _extract_query_anchors(query: str) -> list[str]:
+    """Pull proper-noun-ish tokens out of an NL query for UE1 augmentation.
+
+    For German questions we want capitalised content words (≥3 chars) that
+    aren't generic stopwords. Also picks up known short names like "Gil"
+    that wouldn't pass a longer cutoff. Returns max 6 candidates, ordered
+    by appearance.
+    """
+    if not query:
+        return []
+    # Tokens: capitalised word with 2+ trailing word chars, supports umlauts/ß.
+    raw = re.findall(r"\b[A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9]{1,}\b", query)
+    out: list[str] = []
+    for tok in raw:
+        if tok in _QUERY_STOPWORDS:
+            continue
+        if tok in out:
+            continue
+        out.append(tok)
+        if len(out) >= 6:
+            break
+    return out
 
 
 def _strip_codefence(raw: str) -> str:
