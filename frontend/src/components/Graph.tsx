@@ -385,10 +385,12 @@ export function Graph() {
   // technically in the article but produce a noisy scatter of isolated
   // 1-node communities.
   const [minMentions, setMinMentions] = useState(2);
-  // Default 3: co-occurrence pass produces lots of weak (weight=2)
-  // edges that turn the overview into a hairball. weight ≥ 3 keeps
-  // semantically strong connections only.
-  const [minEdgeWeight, setMinEdgeWeight] = useState(3);
+  // Default 1: the actual extraction data has 93 % of relations at
+  // weight=1 (real entity relationships extracted by the LLM), so
+  // setting a higher floor strips meaningful structure including
+  // canonical CEO/Founder edges. Users can crank it up via the slider
+  // if they want only repeatedly co-mentioned pairs.
+  const [minEdgeWeight, setMinEdgeWeight] = useState(1);
   const [search, setSearch] = useState("");
   const [typesEnabled, setTypesEnabled] = useState<Set<string>>(new Set(TYPE_OPTIONS));
   const [colourBy, setColourBy] = useState<ColourBy>("type");
@@ -572,12 +574,27 @@ export function Graph() {
           n.description.toLowerCase().includes(q)
         ).map(n => n.id)
       );
+      // 1-hop neighbours from direct edges
       const neighbours = new Set<string>();
       for (const e of data.edges) {
         if (matches.has(e.source)) neighbours.add(e.target);
         if (matches.has(e.target)) neighbours.add(e.source);
       }
-      keep = new Set([...matches, ...neighbours]);
+      // When the immediate neighbourhood is sparse (≤ 3 nodes incl.
+      // matches), expand to 2-hop so the user sees actual context
+      // instead of an empty page. Without this, searching "Gil Amelio"
+      // would only show Gil + Apple — useless for "show me his world".
+      const oneHop = new Set([...matches, ...neighbours]);
+      let keepSet = oneHop;
+      if (oneHop.size <= 3) {
+        const twoHop = new Set(oneHop);
+        for (const e of data.edges) {
+          if (oneHop.has(e.source)) twoHop.add(e.target);
+          if (oneHop.has(e.target)) twoHop.add(e.source);
+        }
+        keepSet = twoHop;
+      }
+      keep = keepSet;
     }
     const nodes = data.nodes.filter(n => keep.has(n.id)).map(n => ({ ...n })) as FGNode[];
     const ids = new Set(nodes.map(n => n.id));
@@ -951,6 +968,11 @@ export function Graph() {
   // Focus-mode camera: centre on (0,0) where the selected entity is
   // pinned, then zoomToFit the ego ring. Two-step so the camera moves
   // deliberately rather than the zoomToFit defaulting to old positions.
+  //
+  // Zoom-cap: when the selected node has only 1 visible neighbour,
+  // zoomToFit blows up the pair to fill the canvas (Apple becomes a
+  // hand-sized red square in the screenshot). Clamp the zoom level
+  // after the fit so tiny ego networks render at a comfortable scale.
   useEffect(() => {
     if (!focusMode || !selected || !graphRef.current) return;
     const t1 = setTimeout(() => {
@@ -959,7 +981,14 @@ export function Graph() {
     const t2 = setTimeout(() => {
       graphRef.current?.zoomToFit(500, 80);
     }, 250);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const t3 = setTimeout(() => {
+      if (!graphRef.current) return;
+      const z = graphRef.current.zoom();
+      if (typeof z === "number" && z > 3) {
+        graphRef.current.zoom(3, 400);
+      }
+    }, 800);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [focusMode, selected]);
 
   // Fly camera to the top fuzzy-match when the search field changes.
@@ -1481,7 +1510,13 @@ export function Graph() {
               // "optisch zu klein". sqrt scaling keeps top nodes legible
               // without crushing the long tail. Multiplied by user-
               // adjustable nodeSizeScale from the settings gear.
-              const baseR = (3.2 + Math.sqrt(n.mentions + 1) * 2.1) * nodeSizeScale;
+              //
+              // Cap at 11 so Apple (85 mentions → would be ~22) doesn't
+              // dominate the viewport in low-density views (search,
+              // focus mode). The Tufte way: don't let one outlier
+              // visually swallow the dataset.
+              const rawR = 3.2 + Math.sqrt(n.mentions + 1) * 2.1;
+              const baseR = Math.min(rawR, 11) * nodeSizeScale;
               const isHovered = hovered?.id === n.id;
               const isSelected = selected?.id === n.id;
               const isHighlight = highlightedIds.has(n.id);
@@ -1862,7 +1897,7 @@ function LeftRail(props: {
             style={{ accentColor: ACCENT }}
           />
           <p className="text-[10px] mt-1" style={{ color: TEXT_MUTED }}>
-            1 = alle Kanten · ≥3 versteckt schwache Co-Occurrence
+            1 = alle Kanten · ≥2 nur wiederholt belegte Beziehungen
           </p>
         </div>
         <div className="mt-4">
