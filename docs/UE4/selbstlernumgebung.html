@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>UE4 · Ontology-RAG — Selbstlernumgebung</title>
+<style>
+:root { --bg:#f7f5ef; --ink:#111; --muted:#6b6b6b; --accent:#c8503c; --rule:#d8d4cf; --soft:#efebe2; }
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Inter",sans-serif;font-size:16px;line-height:1.6;}
+.wrap{max-width:900px;margin:0 auto;padding:3rem 2rem;}
+header{border-bottom:1px solid var(--rule);padding-bottom:2rem;margin-bottom:2rem;}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:0.25em;color:var(--muted);}
+h1{font-size:2.4rem;margin:0.5rem 0;font-weight:600;letter-spacing:-0.02em;}
+.lead{color:var(--muted);font-size:1.1rem;max-width:650px;}
+h2{font-size:1.6rem;margin-top:3rem;padding-top:1rem;border-top:1px solid var(--rule);font-weight:600;}
+h3{font-size:1.2rem;margin-top:2rem;color:var(--accent);font-weight:600;}
+code,pre{font-family:"JetBrains Mono","Menlo",monospace;}
+code{background:var(--soft);padding:0.1em 0.4em;border-radius:3px;font-size:0.9em;}
+pre{background:#1f1f1f;color:#e5e5e5;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.85em;line-height:1.5;}
+pre code{background:none;color:inherit;padding:0;}
+.step{display:flex;gap:1.5rem;align-items:flex-start;margin:1.5rem 0;padding:1rem;background:var(--soft);border-left:3px solid var(--accent);}
+.step-no{font-family:monospace;font-size:1.3rem;font-weight:700;color:var(--accent);min-width:2rem;}
+.step-body h3{margin-top:0;color:var(--ink);}
+.callout{padding:1rem 1.5rem;margin:1.5rem 0;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.callout-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--accent);margin-bottom:0.5rem;}
+.toc{background:var(--soft);padding:1rem 1.5rem;margin:2rem 0;border-left:3px solid var(--ink);}
+.toc-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:0.5rem;color:var(--muted);}
+.toc ol{margin:0;padding-left:1.5rem;} .toc a{color:var(--ink);text-decoration:none;} .toc a:hover{color:var(--accent);}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin:1rem 0;}
+.tool{padding:0.75rem;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.tool-name{font-weight:600;font-size:0.9em;} .tool-role{font-size:0.8em;color:var(--muted);}
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.95em;}
+th{text-align:left;font-weight:600;padding:0.5rem;border-bottom:1px solid var(--ink);}
+td{padding:0.5rem;border-bottom:1px solid var(--rule);vertical-align:top;}
+.phase{padding:0.75rem 1rem;margin:0.5rem 0;background:#fff;border-left:3px solid var(--muted);}
+.phase.active{border-left-color:var(--accent);}
+.phase-label{font-size:10px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted);}
+footer{margin-top:4rem;padding-top:2rem;border-top:1px solid var(--rule);color:var(--muted);font-size:0.9em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="eyebrow">Selbstlernumgebung · UC5 RAG-Demo</div>
+<h1>UE4 — Ontology-RAG: OWL + SPARQL + DBpedia</h1>
+<p class="lead">
+  Schrittweise: wie eine OWL-Ontologie in GraphDB aufgebaut wird, wie
+  ein LLM natürlichsprachliche Fragen in SPARQL übersetzt, und wie drei
+  Fallback-Stufen (lokal → UE1-Text → Live-DBpedia) das System gegen
+  Datenlücken absichern.
+</p>
+</header>
+
+<div class="toc">
+<div class="toc-title">Inhalt</div>
+<ol>
+<li><a href="#konzept">Konzept</a></li>
+<li><a href="#stack">Tech-Stack</a></li>
+<li><a href="#ontology">Die Ontologie aufbauen</a></li>
+<li><a href="#bridge">UE3 → GraphDB Bridge</a></li>
+<li><a href="#enrich">DBpedia-Anreicherung</a></li>
+<li><a href="#nl2sparql">NL → SPARQL Pipeline</a></li>
+<li><a href="#fallbacks">Drei Fallback-Stufen</a></li>
+<li><a href="#test">Selbsttest</a></li>
+</ol>
+</div>
+
+<h2 id="konzept">1. Konzept</h2>
+<p>
+  RDF-Triple + OWL-Ontologie + Reasoner = der klassische Semantic-Web-
+  Stack. Anders als UE3 (informeller Property-Graph) hat UE4 ein
+  <em>formal definiertes Vokabular</em>: Klassen mit Hierarchie,
+  Properties mit Domain/Range, Inverse-Relationen.
+</p>
+<p>
+  Der Vorteil: ein <strong>Reasoner</strong> kann implizite Fakten
+  ableiten. Beispiel: wir definieren <code>apple:CEO ⊑ apple:Executive</code>.
+  Eine Query auf alle Executives bekommt CEOs <em>automatisch</em> mit,
+  ohne sie explizit zu listen. Das ist Reasoning.
+</p>
+
+<div class="callout">
+<div class="callout-title">Wann ist UE4 die richtige Wahl?</div>
+<p style="margin:0">
+  Wenn Fragen <em>logische Schlüsse</em> über Klassen-Hierarchien
+  brauchen („alle Smartphones", „alle Personen mit Apple-Rolle"), oder
+  wenn Daten aus mehreren strukturierten Quellen mit
+  <code>owl:sameAs</code> verschmolzen werden sollen (UE3 + DBpedia).
+</p>
+</div>
+
+<h2 id="stack">2. Tech-Stack</h2>
+<div class="tool-grid">
+<div class="tool"><div class="tool-name">Ontotext GraphDB 11.2</div><div class="tool-role">Triple-Store + OWL-Reasoner</div></div>
+<div class="tool"><div class="tool-name">owl-horst-optimized</div><div class="tool-role">Subklassen, Subproperty, Inverse, Transitive</div></div>
+<div class="tool"><div class="tool-name">SPARQL 1.1</div><div class="tool-role">Query-Sprache</div></div>
+<div class="tool"><div class="tool-name">Turtle (TTL)</div><div class="tool-role">Serialisierung der Ontologie</div></div>
+<div class="tool"><div class="tool-name">rdflib</div><div class="tool-role">TTL-Parsing in Tests</div></div>
+<div class="tool"><div class="tool-name">Gemini 2.5 Flash</div><div class="tool-role">NL → SPARQL</div></div>
+<div class="tool"><div class="tool-name">DBpedia</div><div class="tool-role">Externe Knowledge-Base</div></div>
+</div>
+
+<h2 id="ontology">3. Die Ontologie aufbauen</h2>
+
+<div class="step">
+<div class="step-no">3.1</div>
+<div class="step-body">
+<h3>Repository in GraphDB anlegen</h3>
+<p>
+  Über <code>backend/data/graphdb_client.py::ensure_repository()</code>:
+  REST-POST mit <code>multipart/form-data</code> an
+  <code>/rest/repositories</code>, Config-TTL beigelegt. Wichtige Felder:
+</p>
+<pre><code>graphdb:base-URL "http://uc5.butscher.cloud/apple#"
+graphdb:ruleset "owl-horst-optimized"
+graphdb:disable-sameAs "false"   ← wichtig für DBpedia-sameAs!
+graphdb:entity-index-size "10000000"</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">3.2</div>
+<div class="step-body">
+<h3>Ontologie-TTL definieren</h3>
+<p><code>data/migrations/graphdb/001_apple_ontology.ttl</code>:</p>
+<pre><code>@prefix apple: &lt;http://uc5.butscher.cloud/apple#&gt; .
+@prefix owl:   &lt;http://www.w3.org/2002/07/owl#&gt; .
+@prefix rdfs:  &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+
+# Klassen-Hierarchie
+apple:CEO        rdfs:subClassOf apple:Executive .
+apple:Executive  rdfs:subClassOf apple:Employee .
+apple:Employee   rdfs:subClassOf apple:Person .
+apple:Smartphone rdfs:subClassOf apple:MobileDevice .
+apple:MobileDevice rdfs:subClassOf apple:HardwareProduct .
+apple:HardwareProduct rdfs:subClassOf apple:Product .
+
+# Properties mit Inverse
+apple:foundedBy       owl:inverseOf apple:founded .
+apple:wasCEOOf        owl:inverseOf apple:hasCEO .
+apple:predecessorOf   owl:inverseOf apple:successorOf .
+
+# Property-Hierarchie
+apple:wasCEOOf        rdfs:subPropertyOf apple:worksFor .</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">3.3</div>
+<div class="step-body">
+<h3>Kanonische Personen seed</h3>
+<p><code>003_canonical_persons.ttl</code> — historisches Wissen, das
+UE3 oft verpasst:</p>
+<pre><code>apple:GilAmelio
+    a apple:CEO , apple:Executive ;
+    rdfs:label "Gil Amelio"@de , "Gil Amelio"@en ;
+    apple:role "CEO 1996–1997" ;
+    owl:sameAs &lt;http://dbpedia.org/resource/Gil_Amelio&gt; .
+
+apple:TimCook a apple:CEO , apple:Executive ;
+    rdfs:label "Tim Cook"@en ; ...</code></pre>
+</div></div>
+
+<h2 id="bridge">4. UE3 → GraphDB Bridge</h2>
+
+<div class="step">
+<div class="step-no">4.1</div>
+<div class="step-body">
+<h3>Entitäten übersetzen</h3>
+<p><code>backend/ingest/ue4_ontology.py</code>:</p>
+<pre><code>def _entity_uri(entity_key: str) -&gt; str:
+    # "PERSON:steve jobs" → "apple:SteveJobs"
+    _type, name = entity_key.split(":", 1)
+    s = unicodedata.normalize("NFKD", name)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    pascal = "".join(w[:1].upper() + w[1:] for w in s.split())
+    return f"http://uc5.butscher.cloud/apple#{pascal}"
+
+# INSERT in GraphDB
+INSERT DATA {
+  apple:SteveJobs a apple:Person ;
+      rdfs:label "Steve Jobs"@de , "Steve Jobs"@en ;
+      apple:description "Mitgründer von Apple …" .
+}</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.2</div>
+<div class="step-body">
+<h3>Relationen mappen</h3>
+<p>UE3-Relations wie „GRUENDET" → <code>apple:founded</code>, „CEO_VON"
+→ <code>apple:wasCEOOf</code>. Generisches fallback
+<code>apple:associatedWith</code> wenn kein Mapping greift.</p>
+</div></div>
+
+<h2 id="enrich">5. DBpedia-Anreicherung</h2>
+
+<table>
+<tr><th>Modul</th><th>Was holt es?</th></tr>
+<tr><td><code>dbpedia_validator.py</code></td>
+    <td>Personen mit <code>dbo:founder</code>/<code>dbp:founders</code>/<code>dbo:keyPerson</code> zu <code>dbr:Apple_Inc.</code> + Off-Topic-Personen zu <code>UnrelatedPerson</code> demoten</td></tr>
+<tr><td><code>dbpedia_products.py</code></td>
+    <td>43 Apple-Produkte über <code>dbo:manufacturer</code> + Predecessor/Successor-Ketten</td></tr>
+<tr><td><code>dbpedia_edges.py</code></td>
+    <td>Cross-Edges zwischen UE3-Entities aus DBpedia (founded_by, designed_by, manufactures, manufacturedBy, ...)</td></tr>
+</table>
+
+<div class="callout">
+<div class="callout-title">Virtuoso-Gotcha</div>
+<p style="margin:0">
+  DBpedia läuft auf Virtuoso. <code>dbr:Apple_Inc.</code> als CURIE
+  führt zum <em>syntax error at '.' before 'dbo:founder'</em> — der
+  Punkt im PN_LOCAL wird als Triple-Terminator interpretiert. Lösung:
+  volle IRI <code>&lt;http://dbpedia.org/resource/Apple_Inc.&gt;</code>
+  in spitzen Klammern.
+</p>
+</div>
+
+<h2 id="nl2sparql">6. NL → SPARQL Pipeline</h2>
+
+<div class="step">
+<div class="step-no">6.1</div>
+<div class="step-body">
+<h3>System-Prompt mit Datenrealität</h3>
+<pre><code>Du erzeugst SPARQL-1.1-Queries für eine OWL-Ontologie über Apple
+mit aktivem OWL-Horst-Reasoning.
+
+DATENBEREINIGUNG:
+- apple:UnrelatedPerson markiert Off-Topic-Personen.
+  IMMER mit FILTER NOT EXISTS ausschließen.
+- @de UND @en Labels → STR(?label) zum Deduplizieren.
+
+QUERY-STRATEGIE-REGELN:
+1. Wer war/ist X-Rolle:
+   SELECT DISTINCT (STR(?l) AS ?name) WHERE {
+     ?p a apple:CEO ; rdfs:label ?l .
+     FILTER NOT EXISTS { ?p a apple:UnrelatedPerson }
+   } LIMIT 30
+
+2. Welche X-Produkte (Subklassen-Inferenz):
+   ?x rdf:type/rdfs:subClassOf* apple:Smartphone ;
+      rdfs:label ?n .
+
+4. Produktchronologie:
+   Für „Vorgänger von X":
+     ?pred apple:predecessorOf ?x .</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">6.2</div>
+<div class="step-body">
+<h3>Postprocessing</h3>
+<p>
+  Output durchläuft:
+</p>
+<ul>
+<li><code>_strip_codefence()</code> — entfernt ```sparql Wrap</li>
+<li><code>_ensure_prefixes()</code> — fügt fehlende PREFIX-Deklarationen
+    automatisch an (auch wenn Modell sie vergisst)</li>
+</ul>
+</div></div>
+
+<h2 id="fallbacks">7. Drei Fallback-Stufen</h2>
+
+<div class="phase">
+<div class="phase-label">Phase 2 — primär</div>
+<strong>SPARQL gegen GraphDB</strong><br>
+Wenn Bindings &gt; 0 → fertig.
+</div>
+
+<div class="phase active">
+<div class="phase-label">Phase 3 — Fallback 1</div>
+<strong>UE1 Text-Retrieval</strong> auf die Original-NL-Frage,
+wenn SPARQL 0 Bindings liefert und kein Syntax-Error vorlag.
+Chunks bekommen einen HINWEIS-Prefix („Ontologie-Query lieferte keine
+Treffer, folgende Wikipedia-Stellen sind relevant…")
+</div>
+
+<div class="phase active">
+<div class="phase-label">Phase 4 — Fallback 2</div>
+<strong>Live-DBpedia-Lookup</strong> wenn auch UE1 dünn ist.
+<code>extract_anchors(sparql)</code> zieht die Entitätsnamen aus der
+SPARQL („PowerBook 145b"), fragt DBpedia live mit 8s-Timeout +
+1 Retry. Treffer → formatierte Chunks mit Predecessor/Successor/
+Manufacturer/Abstract.
+</div>
+
+<h2 id="test">8. Selbsttest</h2>
+
+<pre><code># 1. Container hochfahren
+docker compose up -d
+
+# 2. UE4-Daten initialisieren
+docker compose exec app python -m backend.data.graphdb_client
+# → lädt 001_apple_ontology.ttl, 002_seed_aliases.ttl,
+#       003_canonical_persons.ttl
+
+# 3. DBpedia-Anreicherungen (über API)
+curl -X POST localhost:8000/api/ue4/validate
+curl -X POST localhost:8000/api/ue4/enrich-products
+curl -X POST localhost:8000/api/ue4/enrich-edges
+curl -X POST localhost:8000/api/ue3/sync-canonical
+
+# 4. Frage stellen
+curl -X POST localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue4",
+       "query":"Welche CEOs hat Apple gehabt?",
+       "llm":"gemini"}'
+
+# Erwartete Antwort: 5 Bindings (Jobs, Cook, Sculley, Spindler, Amelio)
+# trace.sparql ist im Response → didaktische Demo
+
+# 5. Frage die Live-DBpedia trigger:
+curl -X POST localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue4",
+       "query":"Was war vor dem PowerBook 145b?",
+       "llm":"gemini"}'
+# trace.live_dbpedia_used == true wenn DBpedia mitspielt</code></pre>
+
+<footer>
+UC5 RAG-Demo · UE4 Selbstlernumgebung · <em>Datenbasierte Fallstudien</em><br>
+Quellcode unter <code>backend/retrieval/{ontology,dbpedia_live}.py</code>,
+<code>backend/ingest/{ue4_ontology,dbpedia_*}.py</code>,
+<code>data/migrations/graphdb/*.ttl</code>
+</footer>
+</div>
+</body>
+</html>

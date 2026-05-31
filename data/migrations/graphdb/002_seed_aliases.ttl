@@ -1,0 +1,19 @@
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix apple: <http://uc5.butscher.cloud/apple#> .
+
+#
+# Identity bridges. UE4's ingest creates apple:Apple from the UE3 entity
+# extractor (which calls the company simply "Apple") AND we seed a canonical
+# apple:AppleInc with sameAs into DBpedia. Without an alias the reasoner
+# treats them as two different individuals — and queries that ground on
+# apple:AppleInc miss all the relations the ingest attaches to apple:Apple.
+#
+# owl:sameAs is symmetric and transitive in OWL-Horst, so a single triple
+# both directions are inferred. We declare it explicitly for clarity.
+#
+
+apple:Apple owl:sameAs apple:AppleInc .
+
+# Common UE3 name variants we've seen produce the same canonical entity
+apple:AppleComputer  owl:sameAs apple:AppleInc .
+apple:AppleComputerInc owl:sameAs apple:AppleInc .

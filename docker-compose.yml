@@ -1,0 +1,60 @@
+# Production deploy for the VPS — assumes Traefik on `root_default` network
+# with the `mytlschallenge` cert resolver, matching UC4/UC2's pattern.
+# Subdomain: rag-apple.butscher.cloud
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+      POSTGRES_DB: ${POSTGRES_DB:-rag_apple}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - traefik_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag_apple}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@db:5432/${POSTGRES_DB:-rag_apple}
+      # NEO4J_URL/USER/PASSWORD kommen aus .env — auf dem VPS zeigt das auf den
+      # bereits laufenden System-Neo4j-Container (hostname "neo4j" auf root_default).
+    depends_on:
+      db:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.rag-apple-http.rule=Host(`rag-apple.butscher.cloud`)"
+      - "traefik.http.routers.rag-apple-http.entrypoints=web"
+      - "traefik.http.routers.rag-apple-http.middlewares=rag-apple-https-redirect"
+      - "traefik.http.middlewares.rag-apple-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.rag-apple-https-redirect.redirectscheme.permanent=true"
+      # HTTPS
+      - "traefik.http.routers.rag-apple.rule=Host(`rag-apple.butscher.cloud`)"
+      - "traefik.http.routers.rag-apple.entrypoints=websecure"
+      - "traefik.http.routers.rag-apple.tls=true"
+      - "traefik.http.routers.rag-apple.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.rag-apple.tls.domains[0].main=rag-apple.butscher.cloud"
+      - "traefik.http.services.rag-apple.loadbalancer.server.port=8000"
+    networks:
+      - traefik_net
+
+volumes:
+  pgdata:
+
+networks:
+  traefik_net:
+    external: true
+    name: root_default

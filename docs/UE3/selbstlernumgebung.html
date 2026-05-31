@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>UE3 · GraphRAG — Selbstlernumgebung</title>
+<style>
+:root { --bg:#f7f5ef; --ink:#111; --muted:#6b6b6b; --accent:#c8503c; --rule:#d8d4cf; --soft:#efebe2; }
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Inter",sans-serif;font-size:16px;line-height:1.6;}
+.wrap{max-width:900px;margin:0 auto;padding:3rem 2rem;}
+header{border-bottom:1px solid var(--rule);padding-bottom:2rem;margin-bottom:2rem;}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:0.25em;color:var(--muted);}
+h1{font-size:2.4rem;margin:0.5rem 0;font-weight:600;letter-spacing:-0.02em;}
+.lead{color:var(--muted);font-size:1.1rem;max-width:650px;}
+h2{font-size:1.6rem;margin-top:3rem;padding-top:1rem;border-top:1px solid var(--rule);font-weight:600;}
+h3{font-size:1.2rem;margin-top:2rem;color:var(--accent);font-weight:600;}
+code,pre{font-family:"JetBrains Mono","Menlo",monospace;}
+code{background:var(--soft);padding:0.1em 0.4em;border-radius:3px;font-size:0.9em;}
+pre{background:#1f1f1f;color:#e5e5e5;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.85em;line-height:1.5;}
+pre code{background:none;color:inherit;padding:0;}
+.step{display:flex;gap:1.5rem;align-items:flex-start;margin:1.5rem 0;padding:1rem;background:var(--soft);border-left:3px solid var(--accent);}
+.step-no{font-family:monospace;font-size:1.3rem;font-weight:700;color:var(--accent);min-width:2rem;}
+.step-body h3{margin-top:0;color:var(--ink);}
+.callout{padding:1rem 1.5rem;margin:1.5rem 0;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.callout-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--accent);margin-bottom:0.5rem;}
+.toc{background:var(--soft);padding:1rem 1.5rem;margin:2rem 0;border-left:3px solid var(--ink);}
+.toc-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:0.5rem;color:var(--muted);}
+.toc ol{margin:0;padding-left:1.5rem;} .toc a{color:var(--ink);text-decoration:none;} .toc a:hover{color:var(--accent);}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin:1rem 0;}
+.tool{padding:0.75rem;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.tool-name{font-weight:600;font-size:0.9em;} .tool-role{font-size:0.8em;color:var(--muted);}
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.95em;}
+th{text-align:left;font-weight:600;padding:0.5rem;border-bottom:1px solid var(--ink);}
+td{padding:0.5rem;border-bottom:1px solid var(--rule);vertical-align:top;}
+footer{margin-top:4rem;padding-top:2rem;border-top:1px solid var(--rule);color:var(--muted);font-size:0.9em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="eyebrow">Selbstlernumgebung · UC5 RAG-Demo</div>
+<h1>UE3 — GraphRAG: Entitäten, Relationen, Communities</h1>
+<p class="lead">
+  Schrittweise: wie der Wikipedia-Korpus in einen Property-Graph
+  übersetzt wird, mit Louvain-Communities versehen, und für strukturierte
+  Fragen retrievbar gemacht. Inkl. der Fallback-Schichten, die auch
+  unbekannte Entitäten retten.
+</p>
+</header>
+
+<div class="toc">
+<div class="toc-title">Inhalt</div>
+<ol>
+<li><a href="#konzept">Konzept</a></li>
+<li><a href="#stack">Tech-Stack</a></li>
+<li><a href="#extract">Entity- und Relationsextraktion</a></li>
+<li><a href="#persist">Persistierung</a></li>
+<li><a href="#community">Community-Detection</a></li>
+<li><a href="#retrieve">Retrieval-Modi</a></li>
+<li><a href="#enrich">Anreicherungen</a></li>
+<li><a href="#fallback">Text-Fallback</a></li>
+<li><a href="#test">Selbsttest</a></li>
+</ol>
+</div>
+
+<h2 id="konzept">1. Konzept</h2>
+<p>
+  Microsoft <strong>GraphRAG</strong>: Statt nur Volltextsuche bauen wir
+  aus dem Korpus einen <em>Wissensgraphen</em> (Entitäten + Relationen),
+  partitionieren ihn in <em>Communities</em> (Themengruppen) und können
+  bei jeder Frage entweder lokal (an einer Entität) oder global (an einer
+  Community) ansetzen.
+</p>
+
+<div class="callout">
+<div class="callout-title">Warum überhaupt einen Graph?</div>
+<p style="margin:0">
+  Eine Frage wie „Welche Personen waren an der Sculley-Ära beteiligt?"
+  zerfällt in Volltextsuche zu einzelnen Erwähnungen. In einem Graph
+  hängt man an „Sculley-Ära"-Knoten und folgt allen
+  <code>PARTICIPATED_IN</code>-Kanten — strukturiert, deduplizierend.
+</p>
+</div>
+
+<h2 id="stack">2. Tech-Stack</h2>
+<div class="tool-grid">
+<div class="tool"><div class="tool-name">Neo4j 5</div><div class="tool-role">Property-Graph + Cypher</div></div>
+<div class="tool"><div class="tool-name">Postgres ue3.*</div><div class="tool-role">Entity-Metadata, Mentions, Communities</div></div>
+<div class="tool"><div class="tool-name">networkx + python-louvain</div><div class="tool-role">Community Detection</div></div>
+<div class="tool"><div class="tool-name">Gemini 2.5 Flash</div><div class="tool-role">Extraction, Summarization</div></div>
+<div class="tool"><div class="tool-name">react-force-graph-2d</div><div class="tool-role">Frontend-Graph</div></div>
+</div>
+
+<h2 id="extract">3. Entity- und Relationsextraktion</h2>
+
+<div class="step">
+<div class="step-no">3.1</div>
+<div class="step-body">
+<h3>Prompt-Design</h3>
+<p>
+  Pro UE1-Chunk wird Gemini gebeten, alle Entitäten und Relationen
+  als JSON zurückzugeben. Few-Shot Beispiele aus der Apple-Domäne im
+  Prompt verbessern die Konsistenz.
+</p>
+<pre><code>System: Du bist ein gründlicher NER-Extraktor für Apple-Wikipedia.
+        Sei MAXIMAL VOLLSTÄNDIG — auch Nebensatz-Erwähnungen.
+        Typen: PERSON, ORGANIZATION, PRODUCT, EVENT, LOCATION, CONCEPT.
+        BESONDERS WICHTIG — historische CEOs werden oft übersehen,
+        MÜSSEN aber extrahiert werden:
+          Sculley, Spindler, Amelio, Cook (volle Namen!)
+        Antworte AUSSCHLIESSLICH mit gültigem JSON.
+
+User:   Auszug: """..."""
+
+Beispiel:
+{
+  "entities": [
+    {"name": "Steve Jobs", "type": "PERSON",
+     "description": "Mitgründer, CEO 1997-2011"}
+  ],
+  "relations": [
+    {"source": "Steve Jobs", "target": "Apple",
+     "type": "GRUENDET", "evidence": "..."}
+  ]
+}</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">3.2</div>
+<div class="step-body">
+<h3>JSON-Parse + Resolution</h3>
+<ul>
+<li>Antwort wird mit Pydantic gegen strenges Schema gevalidet</li>
+<li>Personen-Resolution: "Wozniak" → "Steve Wozniak"
+    (Suffix-Match auf erstes Wort)</li>
+<li>Apple-Konflikt: "Apple" (UE3) ↔ "Apple Inc." (DBpedia später
+    via owl:sameAs)</li>
+<li>Dedup nach (entity_type, name-lower)</li>
+</ul>
+</div></div>
+
+<h2 id="persist">4. Persistierung</h2>
+
+<div class="step">
+<div class="step-no">4.1</div>
+<div class="step-body">
+<h3>Postgres-Schema</h3>
+<pre><code>-- 007_ue3_entities_communities.sql
+CREATE TABLE ue3.entity_summary (
+  id            serial PRIMARY KEY,
+  entity_key    text UNIQUE,    -- "PERSON:steve jobs"
+  name          text NOT NULL,
+  type          text NOT NULL,  -- PERSON|ORG|PRODUCT|EVENT|LOC|CONCEPT
+  description   text,
+  mention_count int DEFAULT 0
+);
+CREATE TABLE ue3.entity_mention (
+  entity_key  text REFERENCES ue3.entity_summary(entity_key),
+  chunk_id    int REFERENCES ue1.chunk(id),
+  PRIMARY KEY (entity_key, chunk_id)
+);
+CREATE TABLE ue3.community_summary (
+  community_id text PRIMARY KEY,
+  level        int,
+  size         int,
+  summary      text,
+  entity_keys  text[]
+);</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.2</div>
+<div class="step-body">
+<h3>Neo4j-Knoten und -Kanten</h3>
+<pre><code>// data/migrations/neo4j/001_constraints.cypher
+CREATE CONSTRAINT entity_id IF NOT EXISTS
+  FOR (e:Entity) REQUIRE e.id IS UNIQUE;
+
+// Ingest erzeugt
+MERGE (a:Entity {id: 'PERSON:steve jobs'})
+  ON CREATE SET a.name='Steve Jobs', a.type='PERSON'
+MERGE (b:Entity {id: 'ORGANIZATION:apple'})
+  ON CREATE SET b.name='Apple', b.type='ORGANIZATION'
+MERGE (a)-[r:RELATED_TO {type:'GRUENDET'}]->(b)
+  ON CREATE SET r.weight=1
+  ON MATCH  SET r.weight=r.weight+1;</code></pre>
+</div></div>
+
+<h2 id="community">5. Community-Detection (Louvain)</h2>
+
+<div class="step">
+<div class="step-no">5.1</div>
+<div class="step-body">
+<h3>Algorithmus</h3>
+<p>
+  Louvain optimiert die <em>Modularität</em> eines Graphen:
+  Kantengewicht innerhalb der Cluster soll hoch sein, zwischen den
+  Clustern niedrig. In Python:
+</p>
+<pre><code>import networkx as nx
+from community import community_louvain
+
+G = nx.Graph()
+for s, t, w in related_to_edges:
+    G.add_edge(s, t, weight=w)
+
+partition = community_louvain.best_partition(G)
+# partition: {entity_key: community_id_int}</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.2</div>
+<div class="step-body">
+<h3>Community-Summaries</h3>
+<p>Pro Cluster die Members → Gemini → 2-Satz-Summary, gespeichert in
+<code>ue3.community_summary</code>. Verwendet die Mention-Chunks der
+Top-3 Members als Kontext.</p>
+</div></div>
+
+<h2 id="retrieve">6. Retrieval-Modi</h2>
+
+<div class="step">
+<div class="step-no">6.1</div>
+<div class="step-body">
+<h3>local — Entity-anchored</h3>
+<pre><code>def _local_retrieve(q_emb, keywords, type_hints, k):
+    entities = match_entities(keywords, type_hints, q_emb)
+    chunks = []
+    for e in entities[:5]:
+        mentions = pg.fetch_chunks_for(e.entity_key, limit=k)
+        chunks.extend(mentions)
+    return chunks, entities</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">6.2</div>
+<div class="step-body">
+<h3>global — Community-anchored</h3>
+<pre><code>def _global_retrieve(q_emb, k):
+    # Community summaries were embedded at ingest time
+    comms = nearest_communities(q_emb, top=3)
+    return [
+        {"text": c.summary, "section_path": f"Community {c.id}",
+         "kind": "community_summary"}
+        for c in comms
+    ], comms</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">6.3</div>
+<div class="step-body">
+<h3>hybrid (Default)</h3>
+<p>Beides parallel + dedup. Default-Modus, deckt sowohl spezifische
+Entitätsfragen als auch Übersichtsfragen ab.</p>
+</div></div>
+
+<h2 id="enrich">7. Anreicherungen</h2>
+<table>
+<tr><th>Modul</th><th>Was es macht</th><th>Output</th></tr>
+<tr><td><code>dbpedia_validator.py</code></td>
+    <td>Holt kanonische Apple-Personen aus DBpedia, demoted Off-Topic-Personen zu <code>UnrelatedPerson</code></td>
+    <td>+5 CEOs, +Levinson, 11 demoted</td></tr>
+<tr><td><code>dbpedia_products.py</code></td>
+    <td>43 Apple-Produkte + Chronologie (predecessor/successor)</td>
+    <td>+33 Products, 19 predecessor, 21 successor</td></tr>
+<tr><td><code>dbpedia_edges.py</code></td>
+    <td>Cross-Edges zwischen existierenden UE3-Entities aus DBpedia</td>
+    <td>+56 Edges (founded_by, designed_by, ...)</td></tr>
+<tr><td><code>cooccurrence.py</code></td>
+    <td>Entitäten in gleicher Wiki-Sektion → <code>mentioned_with</code>-Edge</td>
+    <td>+4374 Paare über Schwelle 2</td></tr>
+<tr><td><code>canonical_to_ue3.py</code></td>
+    <td>GraphDB-only Entitäten in Postgres+Neo4j syncen</td>
+    <td>+62 Entitäten als CANON:*</td></tr>
+</table>
+
+<h2 id="fallback">8. Text-Fallback</h2>
+<p>
+  Wenn UE3 nichts oder Dünnes findet, läuft UE1 als Augmentierung:
+</p>
+<pre><code>any_canonical = any(e.key.startswith("CANON:") for e in matched_entities)
+thin_match    = len(merged) &lt; k // 2
+no_terms      = not any(t in chunk.text.lower() for t in query_terms for chunk in merged)
+
+if not merged or thin_match or any_canonical or no_terms:
+    text_chunks = SimpleRAG.retrieve(query, k)
+    chunks      = merged + dedupe_against(merged, text_chunks)</code></pre>
+<p class="lead" style="font-size:0.9em">
+  → UE3 ist nie schlechter als UE1, oft besser (durch Struktur-Anker).
+</p>
+
+<h2 id="test">9. Selbsttest</h2>
+<pre><code>curl -X POST localhost:8000/api/ingest \
+  -H "Content-Type: application/json" -d '{"strategy":"ue3"}'
+
+# Anreicherungen (optional, einmalig)
+curl -X POST localhost:8000/api/ue3/enrich-cooccurrence
+curl -X POST localhost:8000/api/ue4/enrich-products
+curl -X POST localhost:8000/api/ue4/enrich-edges
+curl -X POST localhost:8000/api/ue4/validate
+curl -X POST localhost:8000/api/ue3/sync-canonical
+
+curl -X POST localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue3","query":"Welche CEOs hatte Apple?","llm":"gemini"}'</code></pre>
+
+<footer>
+UC5 RAG-Demo · UE3 Selbstlernumgebung · <em>Datenbasierte Fallstudien</em><br>
+Quellcode unter <code>backend/ingest/ue3_graphrag.py</code>,
+<code>backend/retrieval/graphrag.py</code>,
+<code>backend/ingest/{dbpedia_*,cooccurrence,canonical_to_ue3}.py</code>
+</footer>
+</div>
+</body>
+</html>

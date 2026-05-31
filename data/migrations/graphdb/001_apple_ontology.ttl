@@ -1,0 +1,299 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix dbo:    <http://dbpedia.org/ontology/> .
+@prefix dbr:    <http://dbpedia.org/resource/> .
+@prefix foaf:   <http://xmlns.com/foaf/0.1/> .
+@prefix schema: <http://schema.org/> .
+@prefix apple:  <http://uc5.butscher.cloud/apple#> .
+
+#
+# UC5 RAG Apple — Domain ontology
+# -------------------------------
+# Hand-curated mini-ontology aligned with DBpedia, schema.org and FOAF.
+# Stays intentionally light: we add only classes and properties that we
+# expect to assert from the Wikipedia article AND that meaningfully enable
+# reasoning over the most likely user questions (CEOs, products, founders,
+# product families, eras). Everything else can be added incrementally.
+#
+
+apple: a owl:Ontology ;
+    rdfs:label "UC5 Apple Knowledge Graph Ontology"@en, "UC5 Apple Wissensgraph-Ontologie"@de ;
+    rdfs:comment "Lightweight ontology over the German Apple Wikipedia article. Aligned to DBpedia ontology, schema.org and FOAF."@en ;
+    owl:imports <http://dbpedia.org/ontology/> .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+# ── People ──────────────────────────────────────────────────────────────────
+apple:Person a owl:Class ;
+    rdfs:label "Person"@de , "Person"@en ;
+    owl:equivalentClass foaf:Person, dbo:Person, schema:Person .
+
+apple:Employee a owl:Class ;
+    rdfs:subClassOf apple:Person ;
+    rdfs:label "Mitarbeiter"@de , "Employee"@en .
+
+apple:Executive a owl:Class ;
+    rdfs:subClassOf apple:Employee ;
+    rdfs:label "Führungskraft"@de , "Executive"@en .
+
+apple:CEO a owl:Class ;
+    rdfs:subClassOf apple:Executive ;
+    rdfs:label "CEO"@de , "Chief Executive Officer"@en ;
+    rdfs:comment "Vorstandsvorsitzende, Geschäftsführer-Rolle." .
+
+apple:Founder a owl:Class ;
+    rdfs:subClassOf apple:Person ;
+    rdfs:label "Gründer"@de , "Founder"@en .
+
+apple:Designer a owl:Class ;
+    rdfs:subClassOf apple:Employee ;
+    rdfs:label "Designer"@de , "Designer"@en .
+
+apple:Engineer a owl:Class ;
+    rdfs:subClassOf apple:Employee ;
+    rdfs:label "Ingenieur"@de , "Engineer"@en .
+
+# ── Organisations ───────────────────────────────────────────────────────────
+apple:Organization a owl:Class ;
+    rdfs:label "Organisation"@de , "Organization"@en ;
+    owl:equivalentClass dbo:Organisation, schema:Organization .
+
+apple:Company a owl:Class ;
+    rdfs:subClassOf apple:Organization ;
+    rdfs:label "Unternehmen"@de , "Company"@en ;
+    owl:equivalentClass dbo:Company .
+
+apple:Shareholder a owl:Class ;
+    rdfs:subClassOf apple:Organization ;
+    rdfs:label "Aktionär"@de , "Shareholder"@en .
+
+apple:Supplier a owl:Class ;
+    rdfs:subClassOf apple:Organization ;
+    rdfs:label "Zulieferer"@de , "Supplier"@en .
+
+# ── Products ────────────────────────────────────────────────────────────────
+apple:Product a owl:Class ;
+    rdfs:label "Produkt"@de , "Product"@en ;
+    owl:equivalentClass schema:Product .
+
+apple:HardwareProduct a owl:Class ;
+    rdfs:subClassOf apple:Product ;
+    rdfs:label "Hardware"@de , "Hardware Product"@en .
+
+apple:SoftwareProduct a owl:Class ;
+    rdfs:subClassOf apple:Product ;
+    rdfs:label "Software"@de , "Software Product"@en ;
+    owl:equivalentClass dbo:Software .
+
+apple:OperatingSystem a owl:Class ;
+    rdfs:subClassOf apple:SoftwareProduct ;
+    rdfs:label "Betriebssystem"@de , "Operating System"@en ;
+    owl:equivalentClass dbo:OperatingSystem .
+
+apple:Computer a owl:Class ;
+    rdfs:subClassOf apple:HardwareProduct ;
+    rdfs:label "Computer"@de , "Computer"@en .
+
+apple:Desktop a owl:Class ;
+    rdfs:subClassOf apple:Computer ;
+    rdfs:label "Desktop-Computer"@de , "Desktop"@en .
+
+apple:Notebook a owl:Class ;
+    rdfs:subClassOf apple:Computer ;
+    rdfs:label "Notebook"@de , "Notebook"@en .
+
+apple:MobileDevice a owl:Class ;
+    rdfs:subClassOf apple:HardwareProduct ;
+    rdfs:label "Mobiles Gerät"@de , "Mobile Device"@en .
+
+apple:Smartphone a owl:Class ;
+    rdfs:subClassOf apple:MobileDevice ;
+    rdfs:label "Smartphone"@de , "Smartphone"@en .
+
+apple:Tablet a owl:Class ;
+    rdfs:subClassOf apple:MobileDevice ;
+    rdfs:label "Tablet"@de , "Tablet"@en .
+
+apple:Wearable a owl:Class ;
+    rdfs:subClassOf apple:MobileDevice ;
+    rdfs:label "Wearable"@de , "Wearable"@en .
+
+apple:OnlineService a owl:Class ;
+    rdfs:subClassOf apple:Product ;
+    rdfs:label "Onlinedienst"@de , "Online Service"@en .
+
+apple:ProductFamily a owl:Class ;
+    rdfs:label "Produktfamilie"@de , "Product Family"@en ;
+    rdfs:comment "Sammelbezeichnung für mehrere zusammenhängende Produkte (z.B. iPhone-Familie)." .
+
+# ── Events / Eras / Locations / Concepts ────────────────────────────────────
+apple:Event a owl:Class ;
+    rdfs:label "Ereignis"@de , "Event"@en ;
+    owl:equivalentClass dbo:Event, schema:Event .
+
+apple:Era a owl:Class ;
+    rdfs:subClassOf apple:Event ;
+    rdfs:label "Ära"@de , "Era"@en ;
+    rdfs:comment "Zeitperiode mit einheitlicher Apple-Unternehmensführung." .
+
+apple:Location a owl:Class ;
+    rdfs:label "Ort"@de , "Location"@en ;
+    owl:equivalentClass dbo:Place, schema:Place .
+
+apple:Concept a owl:Class ;
+    rdfs:label "Konzept"@de , "Concept"@en ;
+    rdfs:comment "Abstrakte Idee, Technologie oder Designprinzip." .
+
+# ── Classes are pairwise disjoint where sensible ────────────────────────────
+[ a owl:AllDisjointClasses ;
+  owl:members ( apple:Person apple:Organization apple:Product apple:Event apple:Location ) ] .
+
+# ============================================================================
+# OBJECT PROPERTIES
+# ============================================================================
+
+# ── Founding ─────────────────────────────────────────────────────────────────
+apple:foundedBy a owl:ObjectProperty ;
+    rdfs:label "wurde gegründet von"@de , "founded by"@en ;
+    rdfs:domain apple:Organization ;
+    rdfs:range  apple:Person ;
+    owl:equivalentProperty dbo:foundedBy ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:founded a owl:ObjectProperty ;
+    rdfs:label "gründete"@de , "founded"@en ;
+    rdfs:domain apple:Person ;
+    rdfs:range  apple:Organization ;
+    owl:inverseOf apple:foundedBy ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+# ── Employment / Leadership ──────────────────────────────────────────────────
+apple:worksFor a owl:ObjectProperty ;
+    rdfs:label "arbeitet für"@de , "works for"@en ;
+    rdfs:domain apple:Person ;
+    rdfs:range  apple:Organization ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:hasEmployee a owl:ObjectProperty ;
+    rdfs:label "hat Mitarbeiter"@de , "has employee"@en ;
+    rdfs:domain apple:Organization ;
+    rdfs:range  apple:Person ;
+    owl:inverseOf apple:worksFor ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:wasCEOOf a owl:ObjectProperty ;
+    rdfs:label "war CEO von"@de , "was CEO of"@en ;
+    rdfs:domain apple:Person ;
+    rdfs:range  apple:Organization ;
+    rdfs:subPropertyOf apple:worksFor .
+
+apple:hasCEO a owl:ObjectProperty ;
+    rdfs:label "hat CEO"@de , "has CEO"@en ;
+    rdfs:domain apple:Organization ;
+    rdfs:range  apple:Person ;
+    owl:inverseOf apple:wasCEOOf ;
+    rdfs:subPropertyOf apple:hasEmployee .
+
+# ── Products ─────────────────────────────────────────────────────────────────
+apple:manufactures a owl:ObjectProperty ;
+    rdfs:label "stellt her"@de , "manufactures"@en ;
+    rdfs:domain apple:Organization ;
+    rdfs:range  apple:Product ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:manufacturedBy a owl:ObjectProperty ;
+    rdfs:label "hergestellt von"@de , "manufactured by"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:Organization ;
+    owl:inverseOf apple:manufactures ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:designedBy a owl:ObjectProperty ;
+    rdfs:label "entworfen von"@de , "designed by"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:Person ;
+    rdfs:subPropertyOf apple:associatedWith .
+
+apple:partOfFamily a owl:ObjectProperty ;
+    rdfs:label "gehört zur Familie"@de , "part of family"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:ProductFamily ;
+    a owl:TransitiveProperty .
+
+apple:successorOf a owl:ObjectProperty ;
+    rdfs:label "Nachfolger von"@de , "successor of"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:Product .
+
+apple:predecessorOf a owl:ObjectProperty ;
+    rdfs:label "Vorgänger von"@de , "predecessor of"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:Product ;
+    owl:inverseOf apple:successorOf .
+
+# ── Events / Eras ────────────────────────────────────────────────────────────
+apple:occurredDuring a owl:ObjectProperty ;
+    rdfs:label "fand statt während"@de , "occurred during"@en ;
+    rdfs:domain apple:Event ;
+    rdfs:range  apple:Era .
+
+apple:duringEra a owl:ObjectProperty ;
+    rdfs:label "in Ära"@de , "during era"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  apple:Era .
+
+# ── Catch-all relation kept as parent of all the above so the LLM can fall
+#     back when it isn't sure of a more specific property.
+apple:associatedWith a owl:ObjectProperty ;
+    rdfs:label "steht in Beziehung zu"@de , "associated with"@en ;
+    a owl:SymmetricProperty .
+
+# ============================================================================
+# DATA PROPERTIES (Strings / Dates)
+# ============================================================================
+
+apple:foundedYear a owl:DatatypeProperty ;
+    rdfs:label "Gründungsjahr"@de , "founded year"@en ;
+    rdfs:domain apple:Organization ;
+    rdfs:range  xsd:gYear ;
+    rdfs:subPropertyOf dbo:foundingYear .
+
+apple:releaseYear a owl:DatatypeProperty ;
+    rdfs:label "Erscheinungsjahr"@de , "release year"@en ;
+    rdfs:domain apple:Product ;
+    rdfs:range  xsd:gYear .
+
+apple:startYear a owl:DatatypeProperty ;
+    rdfs:label "Beginn"@de , "start year"@en ;
+    rdfs:domain apple:Era ;
+    rdfs:range  xsd:gYear .
+
+apple:endYear a owl:DatatypeProperty ;
+    rdfs:label "Ende"@de , "end year"@en ;
+    rdfs:domain apple:Era ;
+    rdfs:range  xsd:gYear .
+
+apple:role a owl:DatatypeProperty ;
+    rdfs:label "Rolle"@de , "role"@en ;
+    rdfs:domain apple:Person ;
+    rdfs:range  xsd:string ;
+    rdfs:comment "Freitext-Beschreibung der Rolle, falls keine spezielle Klasse passt." .
+
+# ============================================================================
+# SEED INSTANCES (Apple itself + a couple of canonical entities)
+#
+# These give the ingest pipeline anchors to attach extracted entities to,
+# and they carry sameAs links into DBpedia so a reasoner sees the rich
+# background knowledge there.
+# ============================================================================
+
+apple:AppleInc a apple:Company ;
+    rdfs:label "Apple Inc."@en, "Apple Inc."@de ;
+    foaf:name "Apple Inc." ;
+    apple:foundedYear "1976"^^xsd:gYear ;
+    owl:sameAs <http://dbpedia.org/resource/Apple_Inc.>,
+               <http://www.wikidata.org/entity/Q312> .

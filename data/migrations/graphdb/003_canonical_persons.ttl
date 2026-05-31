@@ -1,0 +1,148 @@
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix dbo:   <http://dbpedia.org/ontology/> .
+@prefix dbr:   <http://dbpedia.org/resource/> .
+@prefix apple: <http://uc5.butscher.cloud/apple#> .
+
+#
+# Kuratierte Personen-Stammdaten.
+#
+# Die UE3-Extraktion zieht aus dem Apple-Wikipedia-Artikel viele Personen,
+# erfasst aber Rollen (CEO, Founder, …) nur sehr unzuverlässig — z.B. wird
+# Tim Cook gar nicht extrahiert, John Sculley/Spindler/Amelio fehlen
+# komplett, und Wozniak landet ohne Vorname und ohne Founder-Typ im Graph.
+#
+# Diese Datei ergänzt die historisch bekannten Apple-Führungspersonen
+# als kanonische Instanzen mit korrekter Typisierung. owl:sameAs verlinkt
+# die UE3-Varianten auf die kanonischen URIs, damit Queries beide Wege
+# treffen. Für die Lehre wichtig: das zeigt, wie eine Ontologie als
+# „Wahrheitssicherung" über fehlerhaftem Extraktor-Output funktioniert.
+#
+
+# ───────────────────────────────────────────────────────────────────────
+# CEOs (alle bisherigen)
+# ───────────────────────────────────────────────────────────────────────
+
+apple:SteveJobs
+    a apple:CEO , apple:Founder , apple:Executive ;
+    rdfs:label "Steve Jobs"@de , "Steve Jobs"@en ;
+    foaf:name  "Steven Paul Jobs" ;
+    apple:role "Mitgründer, CEO 1997–2011" ;
+    apple:wasCEOOf apple:AppleInc ;
+    apple:founded apple:AppleInc ;
+    owl:sameAs dbr:Steve_Jobs .
+
+apple:TimCook
+    a apple:CEO , apple:Executive ;
+    rdfs:label "Tim Cook"@de , "Tim Cook"@en ;
+    foaf:name  "Timothy Donald Cook" ;
+    apple:role "CEO seit 2011" ;
+    apple:wasCEOOf apple:AppleInc ;
+    owl:sameAs dbr:Tim_Cook .
+
+apple:JohnSculley
+    a apple:CEO , apple:Executive ;
+    rdfs:label "John Sculley"@de , "John Sculley"@en ;
+    foaf:name  "John Sculley" ;
+    apple:role "CEO 1983–1993" ;
+    apple:wasCEOOf apple:AppleInc ;
+    owl:sameAs dbr:John_Sculley .
+
+apple:MichaelSpindler
+    a apple:CEO , apple:Executive ;
+    rdfs:label "Michael Spindler"@de , "Michael Spindler"@en ;
+    foaf:name  "Michael H. Spindler" ;
+    apple:role "CEO 1993–1996" ;
+    apple:wasCEOOf apple:AppleInc ;
+    owl:sameAs dbr:Michael_Spindler .
+
+apple:GilAmelio
+    a apple:CEO , apple:Executive ;
+    rdfs:label "Gil Amelio"@de , "Gil Amelio"@en ;
+    foaf:name  "Gilbert Frank Amelio" ;
+    apple:role "CEO 1996–1997" ;
+    apple:wasCEOOf apple:AppleInc ;
+    owl:sameAs dbr:Gil_Amelio .
+
+# ───────────────────────────────────────────────────────────────────────
+# Founder
+# ───────────────────────────────────────────────────────────────────────
+
+apple:SteveWozniak
+    a apple:Founder , apple:Engineer ;
+    rdfs:label "Steve Wozniak"@de , "Steve Wozniak"@en ;
+    foaf:name  "Stephen Gary Wozniak" ;
+    apple:role "Mitgründer, Chefingenieur Apple I/II" ;
+    apple:founded apple:AppleInc ;
+    owl:sameAs dbr:Steve_Wozniak .
+
+apple:RonWayne
+    a apple:Founder ;
+    rdfs:label "Ron Wayne"@de , "Ronald Wayne"@de , "Ron Wayne"@en ;
+    foaf:name  "Ronald Gerald Wayne" ;
+    apple:role "Mitgründer 1976" ;
+    apple:founded apple:AppleInc ;
+    owl:sameAs dbr:Ronald_Wayne .
+
+# ───────────────────────────────────────────────────────────────────────
+# Weitere prominente Apple-Persönlichkeiten
+# ───────────────────────────────────────────────────────────────────────
+
+apple:MikeMarkkula
+    a apple:Executive ;
+    rdfs:label "Mike Markkula"@de , "Mike Markkula"@en ;
+    foaf:name  "Armas Clifford Markkula Jr." ;
+    apple:role "Frühinvestor, Chairman 1985–1997" ;
+    owl:sameAs dbr:Mike_Markkula .
+
+apple:JonyIve
+    a apple:Designer , apple:Executive ;
+    rdfs:label "Jony Ive"@de , "Jonathan Ive"@de , "Jony Ive"@en ;
+    foaf:name  "Sir Jonathan Paul Ive" ;
+    apple:role "Chief Design Officer 1996–2019" ;
+    owl:sameAs dbr:Jony_Ive .
+
+# ───────────────────────────────────────────────────────────────────────
+# Aliase: bestehende UE3-Extraktionen → kanonische URIs
+# ───────────────────────────────────────────────────────────────────────
+
+# Aliase nutzen das exakte UE3-URI-Schema: PascalCase ohne Unterstriche
+# (siehe backend.ingest.ue4_ontology._entity_uri).
+apple:Wozniak       owl:sameAs apple:SteveWozniak .
+apple:JonathanIve   owl:sameAs apple:JonyIve .
+apple:RonWayne      owl:sameAs apple:RonWayne .   # bereits identisch — Sicherheitsnetz
+
+# ───────────────────────────────────────────────────────────────────────
+# Cleanup: offensichtlich themenfremde „Personen" aus UE3 zurücktypisieren
+#
+# Die UE3-Extraktion hat aus Kontext-Erwähnungen u.a. Aljaksandr
+# Lukaschenka (Belarus-Präsident), Alan Turing (Computing-Historie),
+# Isaac Newton (Apple-Logo-Anekdote), Sabine Leutheusser-Schnarrenberger
+# (Datenschutz-Kontext) und „Uiguren" (Lieferketten-Kontext) als Person
+# typisiert. Wir entfernen die Person-Typisierung NICHT — das wäre
+# inhaltlich unehrlich (sie sind ja Personen) — aber sie sind keine
+# Apple-Personen. Eine Klasse apple:UnrelatedPerson markiert sie als
+# nicht-Apple-spezifisch, damit Apple-Personen-Queries sauber bleiben.
+#
+# WICHTIG: URI-Schema = PascalCase ohne Unterstriche und ohne abschließenden
+# Punkt — sonst rejected GraphDB die gesamte Datei (Turtle-Syntax).
+# Eight Inc. → EightInc; Sabine Leutheusser-Schnarrenberger → SabineLeutheusser-schnarrenberger
+# (Bindestrich bleibt, zweites 's' kleingeschrieben wie es UE3 erzeugt).
+# ───────────────────────────────────────────────────────────────────────
+
+apple:UnrelatedPerson rdfs:subClassOf apple:Person ;
+    rdfs:label "Person ohne Apple-spezifische Rolle (Kontext-Erwähnung)"@de .
+
+apple:AljaksandrLukaschenka              a apple:UnrelatedPerson .
+apple:AlanTuring                         a apple:UnrelatedPerson .
+apple:IsaacNewton                        a apple:UnrelatedPerson .
+apple:SabineLeutheusser-schnarrenberger  a apple:UnrelatedPerson .
+apple:Uiguren                            a apple:UnrelatedPerson .
+apple:EightInc                           a apple:UnrelatedPerson .
+apple:PawelDurow                         a apple:UnrelatedPerson .
+apple:LauraSydell                        a apple:UnrelatedPerson .
+apple:QuinnNelson                        a apple:UnrelatedPerson .
+apple:StevenLevy                         a apple:UnrelatedPerson .
+apple:DavidYoffie                        a apple:UnrelatedPerson .

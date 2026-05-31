@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>UE2 · PageIndex — Selbstlernumgebung</title>
+<style>
+:root { --bg:#f7f5ef; --ink:#111; --muted:#6b6b6b; --accent:#c8503c; --rule:#d8d4cf; --soft:#efebe2; }
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Inter",sans-serif;font-size:16px;line-height:1.6;}
+.wrap{max-width:900px;margin:0 auto;padding:3rem 2rem;}
+header{border-bottom:1px solid var(--rule);padding-bottom:2rem;margin-bottom:2rem;}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:0.25em;color:var(--muted);}
+h1{font-size:2.4rem;margin:0.5rem 0;font-weight:600;letter-spacing:-0.02em;}
+.lead{color:var(--muted);font-size:1.1rem;max-width:650px;}
+h2{font-size:1.6rem;margin-top:3rem;padding-top:1rem;border-top:1px solid var(--rule);font-weight:600;}
+h3{font-size:1.2rem;margin-top:2rem;color:var(--accent);font-weight:600;}
+code,pre{font-family:"JetBrains Mono","Menlo",monospace;}
+code{background:var(--soft);padding:0.1em 0.4em;border-radius:3px;font-size:0.9em;}
+pre{background:#1f1f1f;color:#e5e5e5;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.85em;line-height:1.5;}
+pre code{background:none;color:inherit;padding:0;}
+.step{display:flex;gap:1.5rem;align-items:flex-start;margin:1.5rem 0;padding:1rem;background:var(--soft);border-left:3px solid var(--accent);}
+.step-no{font-family:monospace;font-size:1.3rem;font-weight:700;color:var(--accent);min-width:2rem;}
+.step-body h3{margin-top:0;color:var(--ink);}
+.callout{padding:1rem 1.5rem;margin:1.5rem 0;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.callout-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--accent);margin-bottom:0.5rem;}
+.toc{background:var(--soft);padding:1rem 1.5rem;margin:2rem 0;border-left:3px solid var(--ink);}
+.toc-title{font-size:11px;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:0.5rem;color:var(--muted);}
+.toc ol{margin:0;padding-left:1.5rem;} .toc a{color:var(--ink);text-decoration:none;} .toc a:hover{color:var(--accent);}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin:1rem 0;}
+.tool{padding:0.75rem;background:#fff;border:1px solid var(--rule);border-radius:4px;}
+.tool-name{font-weight:600;font-size:0.9em;} .tool-role{font-size:0.8em;color:var(--muted);}
+.tree{font-family:monospace;background:#fff;border:1px solid var(--rule);padding:1rem;line-height:1.4;font-size:0.9em;overflow-x:auto;}
+.tree b{color:var(--accent);}
+footer{margin-top:4rem;padding-top:2rem;border-top:1px solid var(--rule);color:var(--muted);font-size:0.9em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="eyebrow">Selbstlernumgebung · UC5 RAG-Demo</div>
+<h1>UE2 — PageIndex: Tree-Navigation vor Retrieval</h1>
+<p class="lead">
+  Schrittweise: wie der UE1-Stack um eine LLM-summarisierte Sektions-
+  Baumstruktur erweitert wird, damit Übersichts-Fragen punktgenau in der
+  richtigen Sektion landen.
+</p>
+</header>
+
+<div class="toc">
+<div class="toc-title">Inhalt</div>
+<ol>
+<li><a href="#konzept">Konzept</a></li>
+<li><a href="#stack">Tech-Stack</a></li>
+<li><a href="#tree">Den Tree bauen</a></li>
+<li><a href="#summarize">Bottom-Up Summarization</a></li>
+<li><a href="#navigate">Navigation zur Anfragezeit</a></li>
+<li><a href="#filter">Filtered UE1 Retrieval</a></li>
+<li><a href="#test">Selbsttest</a></li>
+</ol>
+</div>
+
+<h2 id="konzept">1. Konzept</h2>
+<p>
+  Reine semantische Suche (UE1) findet einzelne Textstellen — gut für
+  Punktfragen, schlecht für Übersichtsfragen. <strong>PageIndex</strong>
+  fügt eine zusätzliche Schicht hinzu: eine Hierarchie von Sektions-
+  Summaries, durch die ein LLM bei jeder Frage erst <em>navigiert</em>
+  (wie ein Mensch durch ein Buch-Inhaltsverzeichnis), bevor die
+  eigentliche Volltextsuche dispatcht wird.
+</p>
+
+<div class="callout">
+<div class="callout-title">Idee in einem Satz</div>
+<p style="margin:0">
+  Bevor du Sätze durchsuchst, lies das Inhaltsverzeichnis. Bei einem
+  500-seitigen Buch sparst du dir 99 % Lesezeit. Genau das macht
+  PageIndex für RAG.
+</p>
+</div>
+
+<h2 id="stack">2. Tech-Stack</h2>
+<div class="tool-grid">
+<div class="tool"><div class="tool-name">UE1 (Voraussetzung)</div><div class="tool-role">clean.section + ue1.chunk müssen existieren</div></div>
+<div class="tool"><div class="tool-name">Postgres ue2.tree_node</div><div class="tool-role">rekursive Baum-Tabelle</div></div>
+<div class="tool"><div class="tool-name">Gemini 2.5 Flash</div><div class="tool-role">Summarization + Navigation</div></div>
+<div class="tool"><div class="tool-name">JSON-Schema</div><div class="tool-role">strenge Validierung der Navigations-Antwort</div></div>
+</div>
+
+<h2 id="tree">3. Den Tree bauen</h2>
+
+<div class="step">
+<div class="step-no">3.1</div>
+<div class="step-body">
+<h3>Migration für die Baum-Tabelle</h3>
+<pre><code>-- 005_ue2_tree.sql
+CREATE TABLE ue2.tree_node (
+  id          serial PRIMARY KEY,
+  snapshot_id int REFERENCES raw.snapshot(id),
+  parent_id   int REFERENCES ue2.tree_node(id),
+  section_id  int REFERENCES clean.section(id),  -- NULL für Synth-Knoten
+  path        text NOT NULL,
+  depth       int NOT NULL,
+  ordinal     int NOT NULL,
+  summary     text NOT NULL,
+  llm_model   text,
+  created_at  timestamptz DEFAULT now(),
+  UNIQUE (snapshot_id, path)
+);
+CREATE INDEX ON ue2.tree_node(parent_id);
+CREATE INDEX ON ue2.tree_node(snapshot_id, depth);</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">3.2</div>
+<div class="step-body">
+<h3>Sektion-Hierarchie aus clean.section ableiten</h3>
+<p>
+  Die Sektionspfade haben bereits eine Struktur:
+</p>
+<div class="tree">
+Wikipedia: Apple
+├── <b>Geschichte</b>
+│   ├── 1976–1980: Gründung
+│   ├── 1980–1985: Erfolg und Niederlage
+│   ├── 1985–1996: Sculley-Ära und danach
+│   ├── 1997–2000: Der Weg aus der Krise
+│   └── 2000-heute: Wachstum
+├── <b>Unternehmen</b>
+│   ├── Hauptsitz
+│   ├── Mitarbeiter
+│   └── Apple Stores
+├── <b>Produkte</b>
+│   ├── Hardware
+│   ├── Software
+│   └── Dienste
+├── <b>Produktdesign</b>
+└── <b>Kritik</b>
+</div>
+</div></div>
+
+<h2 id="summarize">4. Bottom-Up Summarization</h2>
+
+<div class="step">
+<div class="step-no">4.1</div>
+<div class="step-body">
+<h3>Leaf-Sektionen zusammenfassen</h3>
+<p>Pro Leaf: alle UE1-Chunks dieser Sektion ans LLM mit Prompt:</p>
+<pre><code>System: Du fasst Wikipedia-Sektionen für eine Knowledge-Base zusammen.
+        Max 3 Sätze, faktenfokussiert, keine Spekulation.
+User:   Sektion: {path}
+        Text: {chunks_joined}
+        Fasse zusammen.</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.2</div>
+<div class="step-body">
+<h3>Eltern-Sektionen rekursiv</h3>
+<pre><code>System: Du fasst eine Buchkapitel-Ebene zusammen, indem du die
+        Unterkapitel-Summaries integrierst.
+User:   Kapitel: {path}
+        Unterkapitel:
+          1. {child1.path} — {child1.summary}
+          2. {child2.path} — {child2.summary}
+        Fasse das Kapitel in 2-3 Sätzen zusammen.</code></pre>
+<p class="lead" style="font-size:0.9em">
+  → Information fließt bottom-up: Leaf-Inhalt → Mid-Level Themes →
+  Top-Level Strukturüberblick.
+</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.3</div>
+<div class="step-body">
+<h3>Speichern + Idempotenz</h3>
+<p>
+  Jeder Knoten in <code>ue2.tree_node</code> ist eindeutig per
+  <code>(snapshot_id, path)</code>. Re-Run mit gleichem Snapshot ist
+  idempotent (UPSERT).
+</p>
+</div></div>
+
+<h2 id="navigate">5. Navigation zur Anfragezeit</h2>
+
+<div class="step">
+<div class="step-no">5.1</div>
+<div class="step-body">
+<h3>Start: Wurzel</h3>
+<p>
+  Die Wurzel-Summary beschreibt das ganze Lemma. Das LLM sieht alle
+  Top-Level-Kinder mit ihren Kurz-Summaries.
+</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.2</div>
+<div class="step-body">
+<h3>Iterativ vertiefen</h3>
+<pre><code>System: Du wählst aus einer Liste von Sektionen jene, die zur
+        Beantwortung der Frage relevant sind.
+User:   Aktuelle Sektion: {node.path}
+        Summary: {node.summary}
+
+        Kinder:
+          1. Hauptsitz — Apple-HQ in Cupertino seit 1993 …
+          2. Apple Stores — 16 Stores in Deutschland …
+          3. Mitarbeiter — 164 000 weltweit Stand 2024 …
+
+        Frage: "Wo hat Apple seinen Hauptsitz?"
+
+        Antworte JSON: { "selected": [Indizes], "dive_deeper": bool }</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.3</div>
+<div class="step-body">
+<h3>Hallu-Schutz</h3>
+<p>
+  Pydantic-Schema-Parse mit strikter Validation. Wenn das LLM einen
+  Index nennt der nicht in der Kinderliste war: <code>selected = [0]</code>
+  (erstes Kind), <code>dive_deeper = False</code>. Bestraft das Modell
+  und vermeidet Crashes.
+</p>
+</div></div>
+
+<h2 id="filter">6. Filtered UE1 Retrieval</h2>
+<p>
+  Wenn die Navigation Terminal-Sektionen ausgewählt hat, läuft die
+  UE1-Pipeline mit einem zusätzlichen Filter:
+</p>
+<pre><code>SELECT … FROM ue1.chunk
+WHERE section_id IN (:selected_section_ids)
+ORDER BY embedding &lt;=&gt; :q_emb LIMIT 30;</code></pre>
+<p>
+  Der Rest (BM25, RRF, Reranker, MMR) läuft genau wie in UE1. Die
+  Antwort referenziert die Section-Pfade wie zuvor.
+</p>
+
+<h2 id="test">7. Selbsttest</h2>
+<pre><code>curl -X POST localhost:8000/api/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue2"}'  # generiert den Tree (dauert ca. 2–3 min)
+
+curl -X POST localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue2","query":"Was war die Sculley-Ära?","llm":"gemini"}'</code></pre>
+<p>
+  Im Frontend: UE2 wählen, Frage eingeben. Im Trace-Output siehst du
+  den Navigations-Pfad: <code>"path": ["Geschichte", "Sculley-Ära und danach"]</code>.
+</p>
+
+<footer>
+UC5 RAG-Demo · UE2 Selbstlernumgebung · <em>Datenbasierte Fallstudien</em><br>
+Quellcode unter <code>backend/ingest/ue2_pageindex.py</code>,
+<code>backend/retrieval/pageindex.py</code>
+</footer>
+</div>
+</body>
+</html>

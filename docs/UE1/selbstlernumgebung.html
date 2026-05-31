@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>UE1 · Simple RAG — Selbstlernumgebung</title>
+<style>
+:root {
+  --bg: #f7f5ef; --ink: #111; --muted: #6b6b6b;
+  --accent: #c8503c; --rule: #d8d4cf; --soft: #efebe2;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  font-size: 16px; line-height: 1.6;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+header { border-bottom: 1px solid var(--rule); padding-bottom: 2rem; margin-bottom: 2rem; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.25em; color: var(--muted); }
+h1 { font-size: 2.4rem; margin: 0.5rem 0 0.5rem; font-weight: 600; letter-spacing: -0.02em; }
+.lead { color: var(--muted); font-size: 1.1rem; max-width: 650px; }
+h2 { font-size: 1.6rem; margin-top: 3rem; padding-top: 1rem;
+     border-top: 1px solid var(--rule); font-weight: 600; }
+h3 { font-size: 1.2rem; margin-top: 2rem; color: var(--accent); font-weight: 600; }
+code, pre { font-family: "JetBrains Mono", "Menlo", monospace; }
+code { background: var(--soft); padding: 0.1em 0.4em; border-radius: 3px; font-size: 0.9em; }
+pre { background: #1f1f1f; color: #e5e5e5; padding: 1rem; border-radius: 6px;
+      overflow-x: auto; font-size: 0.85em; line-height: 1.5; }
+pre code { background: none; color: inherit; padding: 0; }
+.step { display: flex; gap: 1.5rem; align-items: flex-start;
+        margin: 1.5rem 0; padding: 1rem;
+        background: var(--soft); border-left: 3px solid var(--accent); }
+.step-no { font-family: monospace; font-size: 1.3rem; font-weight: 700;
+           color: var(--accent); min-width: 2rem; }
+.step-body h3 { margin-top: 0; color: var(--ink); }
+.callout { padding: 1rem 1.5rem; margin: 1.5rem 0;
+           background: #fff; border: 1px solid var(--rule); border-radius: 4px; }
+.callout-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em;
+                 color: var(--accent); margin-bottom: 0.5rem; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95em; }
+th { text-align: left; font-weight: 600; padding: 0.5rem; border-bottom: 1px solid var(--ink); }
+td { padding: 0.5rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.toc { background: var(--soft); padding: 1rem 1.5rem; margin: 2rem 0;
+       border-left: 3px solid var(--ink); }
+.toc-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em;
+             margin-bottom: 0.5rem; color: var(--muted); }
+.toc ol { margin: 0; padding-left: 1.5rem; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover { color: var(--accent); }
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+             gap: 0.75rem; margin: 1rem 0; }
+.tool { padding: 0.75rem; background: #fff; border: 1px solid var(--rule); border-radius: 4px; }
+.tool-name { font-weight: 600; font-size: 0.9em; }
+.tool-role { font-size: 0.8em; color: var(--muted); }
+footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--rule);
+         color: var(--muted); font-size: 0.9em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div class="eyebrow">Selbstlernumgebung · UC5 RAG-Demo</div>
+<h1>UE1 — Simple RAG mit Hybrid-Retrieval</h1>
+<p class="lead">
+  Schrittweise Anleitung, wie der einfachste RAG-Stack über einen
+  deutschen Wikipedia-Artikel implementiert wird:
+  Ingest → Chunking → Embeddings → Hybrid-Retrieval (Dense + BM25) →
+  LLM-Reranker → MMR → Antwort.
+</p>
+</header>
+
+<div class="toc">
+<div class="toc-title">Inhalt</div>
+<ol>
+<li><a href="#konzept">Konzept</a></li>
+<li><a href="#stack">Tech-Stack</a></li>
+<li><a href="#datenmodell">Datenmodell anlegen</a></li>
+<li><a href="#ingest">Ingest-Pipeline</a></li>
+<li><a href="#retrieval">Retrieval-Pipeline</a></li>
+<li><a href="#answering">Antwort-Generierung</a></li>
+<li><a href="#test">Selbsttest</a></li>
+<li><a href="#weiter">Wohin als nächstes</a></li>
+</ol>
+</div>
+
+<h2 id="konzept">1. Konzept</h2>
+<p>
+  RAG = <strong>Retrieval-Augmented Generation</strong>. Das LLM bekommt
+  bei jeder Frage nur die wenigen Textstellen aus dem Korpus, die wirklich
+  zur Frage passen, statt sich auf sein Trainingswissen zu verlassen.
+  Das verhindert Halluzinationen und macht Antworten überprüfbar.
+</p>
+<p>
+  „Simple RAG" heißt: <em>kein</em> Wissens-Graph, <em>keine</em> Tree-Navigation,
+  <em>keine</em> Ontologie. Nur Textstücke + Vektor-Index + Volltextindex
+  + LLM.
+</p>
+
+<div class="callout">
+<div class="callout-title">Warum „Hybrid"?</div>
+<p style="margin:0">
+  Reine Vektor-Suche scheitert oft an Eigennamen und Zahlen
+  („PowerBook 165", „740 Mio. Dollar"). Reine Stichwortsuche scheitert
+  bei semantischen Fragen („Welche Krise hatte Apple?"). Wir kombinieren
+  beide via <strong>Reciprocal Rank Fusion (RRF)</strong> — das Beste aus zwei Welten.
+</p>
+</div>
+
+<h2 id="stack">2. Tech-Stack</h2>
+<div class="tool-grid">
+<div class="tool"><div class="tool-name">Postgres 16 + pgvector</div><div class="tool-role">Speicher + Vektor-HNSW + BM25</div></div>
+<div class="tool"><div class="tool-name">SQLAlchemy + Alembic</div><div class="tool-role">ORM + Migrations</div></div>
+<div class="tool"><div class="tool-name">FastAPI</div><div class="tool-role">REST-Endpoints</div></div>
+<div class="tool"><div class="tool-name">Gemini 2.5 Flash</div><div class="tool-role">Generierung + Reranker</div></div>
+<div class="tool"><div class="tool-name">gemini-embedding-001</div><div class="tool-role">768-dim Embeddings (Matryoshka)</div></div>
+<div class="tool"><div class="tool-name">BeautifulSoup4</div><div class="tool-role">Wikipedia-HTML cleanen</div></div>
+<div class="tool"><div class="tool-name">markdownify</div><div class="tool-role">HTML → Markdown</div></div>
+<div class="tool"><div class="tool-name">React + Vite</div><div class="tool-role">Frontend-Chat</div></div>
+</div>
+
+<h2 id="datenmodell">3. Datenmodell anlegen</h2>
+<p>
+  Drei Schichten in Postgres — sauber getrennt nach Verantwortung:
+</p>
+
+<div class="step">
+<div class="step-no">3.1</div>
+<div class="step-body">
+<h3>Schema <code>raw</code> · <code>clean</code> · <code>ue1</code></h3>
+<pre><code>-- 001_extensions_and_meta.sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE SCHEMA raw;
+CREATE SCHEMA clean;
+CREATE SCHEMA ue1;
+CREATE SCHEMA meta;
+
+-- 002_raw_snapshot.sql
+CREATE TABLE raw.snapshot (
+  id          serial PRIMARY KEY,
+  url         text NOT NULL,
+  fetched_at  timestamptz DEFAULT now(),
+  revision_id text,
+  content     text,
+  content_hash text
+);
+
+-- 003_clean_section.sql
+CREATE TABLE clean.document (...);
+CREATE TABLE clean.section (
+  id         serial PRIMARY KEY,
+  document_id int REFERENCES clean.document(id),
+  parent_id  int REFERENCES clean.section(id),
+  path       text NOT NULL,       -- "Geschichte/1976-1980: Gründung"
+  depth      int NOT NULL,
+  ordinal    int NOT NULL,
+  body_md    text
+);
+
+-- 004_ue1_chunk.sql + 006_tsvector_gin.sql
+CREATE TABLE ue1.chunk (
+  id          serial PRIMARY KEY,
+  section_id  int REFERENCES clean.section(id),
+  ordinal     int NOT NULL,
+  text        text NOT NULL,
+  embedding   vector(768),
+  text_tsv    tsvector
+    GENERATED ALWAYS AS (to_tsvector('german', text)) STORED
+);
+
+CREATE INDEX ON ue1.chunk USING hnsw (embedding vector_cosine_ops)
+  WITH (m=16, ef_construction=64);
+CREATE INDEX ON ue1.chunk USING GIN (text_tsv);</code></pre>
+</div></div>
+
+<h2 id="ingest">4. Ingest-Pipeline</h2>
+
+<div class="step">
+<div class="step-no">4.1</div>
+<div class="step-body">
+<h3>Wikipedia-Artikel laden</h3>
+<p><code>backend/data/wikipedia_loader.py</code> — fetched die deutsche
+Wikipedia-Seite via httpx, speichert Roh-HTML in <code>raw.snapshot</code>
+mit Hash zur Idempotenz.</p>
+<pre><code>r = httpx.get(settings.wikipedia_url, timeout=30)
+content = r.text
+content_hash = sha256(content.encode()).hexdigest()
+# upsert in raw.snapshot</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.2</div>
+<div class="step-body">
+<h3>HTML cleanen</h3>
+<p><code>backend/data/cleaner.py</code> entfernt Infoboxen, Navigation,
+Referenzen, Edit-Links etc. Behandelt den modernen MediaWiki-
+<code>&lt;div class="mw-heading"&gt;</code>-Wrapper korrekt.</p>
+<pre><code>def _is_heading_wrapper(tag):
+    return tag.name == "div" and "mw-heading" in (tag.get("class") or [])
+def _effective_start(h):
+    # H2 inside mw-heading → next_siblings of WRAPPER, not h
+    parent = h.find_parent(_is_heading_wrapper)
+    return parent if parent else h</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.3</div>
+<div class="step-body">
+<h3>Sektionen extrahieren</h3>
+<p>Headings H2/H3 werden zu einer Baumstruktur in <code>clean.section</code>.
+Der Section-Pfad „Geschichte/1985–1996: Sculley-Ära" ist später beim
+Antworten als Zitat sichtbar.</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.4</div>
+<div class="step-body">
+<h3>Chunken mit Section-Prefix</h3>
+<p><code>backend/data/chunker.py</code> teilt Markdown in Token-Budget-
+Chunks (~500 Tokens). <strong>Jeder Chunk bekommt seinen Section-Pfad
+vorangestellt</strong> — das verbessert die Embeddings dramatisch.</p>
+<pre><code># Chunk-Text vor Embedding:
+"[Geschichte/1976-1980: Gründung]
+Steve Jobs, Steve Wozniak und Ronald Wayne
+gründeten Apple am 1. April 1976 …"</code></pre>
+<p class="lead" style="font-size:0.9em">
+  → Embedding kennt jetzt nicht nur den Inhalt, sondern auch <em>worüber
+  der Inhalt steht</em>.
+</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.5</div>
+<div class="step-body">
+<h3>Embeddings holen</h3>
+<p><code>backend/llm/embeddings.py</code> → Gemini
+<code>gemini-embedding-001</code> mit
+<code>output_dimensionality=768</code> (Matryoshka-Truncation des
+3072-dim Vollformats) und manueller L2-Normalisierung.</p>
+<pre><code>resp = client.embed_content(
+    model="gemini-embedding-001",
+    content=batch_texts,
+    output_dimensionality=768,
+)
+vecs = np.array(resp.embedding) / np.linalg.norm(...)  # L2-normalize</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">4.6</div>
+<div class="step-body">
+<h3>Schreiben + Index</h3>
+<p>Insert in <code>ue1.chunk</code>; <code>text_tsv</code> wird durch
+die GENERATED-Column automatisch gefüllt; HNSW-Index erlaubt schnelle
+Cosinus-Suche.</p>
+</div></div>
+
+<h2 id="retrieval">5. Retrieval-Pipeline</h2>
+
+<p>
+  <code>backend/retrieval/pipeline.py</code> macht den Kern. Bei jeder
+  Frage:
+</p>
+
+<div class="step">
+<div class="step-no">5.1</div>
+<div class="step-body">
+<h3>Dense-Suche (pgvector)</h3>
+<pre><code>SELECT id, text, section_path,
+       embedding &lt;=&gt; :q_emb AS distance
+FROM ue1.chunk
+ORDER BY distance LIMIT 30;</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.2</div>
+<div class="step-body">
+<h3>Sparse-Suche (BM25 via tsvector)</h3>
+<pre><code>SELECT id, text, ts_rank_cd(text_tsv, q) AS rank
+FROM ue1.chunk,
+     to_tsquery('german', :keywords) AS q
+WHERE text_tsv @@ q
+ORDER BY rank DESC LIMIT 30;</code></pre>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.3</div>
+<div class="step-body">
+<h3>Reciprocal Rank Fusion</h3>
+<p>
+  Jeder Chunk bekommt eine Score basierend auf seinen Rängen in den
+  beiden Listen:
+</p>
+<pre><code>RRF(d) = Σᵢ 1 / (60 + rank_i(d))</code></pre>
+<p>
+  Konstanter Offset 60 dämpft die Spitzen → Chunks die in beiden
+  Listen mittel-hoch ranken gewinnen vor Chunks die in einer Liste
+  ganz oben aber in der anderen gar nicht vorkommen.
+</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.4</div>
+<div class="step-body">
+<h3>LLM-Reranker</h3>
+<p>
+  Top-15 Kandidaten gehen an Gemini mit dem Auftrag: „Für jeden Chunk:
+  wie relevant zur Frage auf einer Skala 1–10?" Daraus die Top-K
+  (default 8).
+</p>
+</div></div>
+
+<div class="step">
+<div class="step-no">5.5</div>
+<div class="step-body">
+<h3>MMR-Diversifikation</h3>
+<p>
+  Maximal Marginal Relevance: bei der Auswahl der finalen K Chunks
+  wird Redundanz bestraft. λ steuert die Balance.
+</p>
+<pre><code>MMR(d) = λ · sim(d, query) − (1−λ) · max sim(d, dⱼ)
+                                        ⱼ∈selected</code></pre>
+<p>
+  Ergebnis: K verschiedene Chunks, nicht 5× derselbe Absatz aus
+  leicht unterschiedlichen Perspektiven.
+</p>
+</div></div>
+
+<h2 id="answering">6. Antwort-Generierung</h2>
+<p>
+  Die finalen Chunks gehen mit der Originalfrage an Gemini 2.5 Flash:
+</p>
+<pre><code>System: Beantworte die Frage AUSSCHLIESSLICH auf Basis
+        der Auszüge. Zitiere jeden Fakt mit dem Section-Pfad
+        in Klammern. Halluziniere nichts dazu.
+
+Auszüge:
+  [Geschichte/Gründung]
+  Steve Jobs … gründete Apple am 1. April 1976 …
+
+  [Geschichte/Sculley-Ära]
+  John Sculley wurde 1983 CEO …
+
+Frage: Wer hat Apple gegründet?
+→ Antwort: "Apple wurde von Steve Jobs, Steve Wozniak und
+   Ronald Wayne am 1. April 1976 gegründet (Geschichte/Gründung)."</code></pre>
+
+<h2 id="test">7. Selbsttest</h2>
+<p>Nach dem Hochfahren des Docker-Compose-Stacks:</p>
+<pre><code>docker compose up -d
+# Lege UE1 an:
+curl -X POST localhost:8000/api/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue1"}'
+
+# Frage stellen:
+curl -X POST localhost:8000/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"ue1","query":"Wann wurde Apple gegründet?","llm":"gemini"}'</code></pre>
+
+<h2 id="weiter">8. Wohin als nächstes</h2>
+<p>UE1 ist die Basis. Die nächsten Übungseinheiten erweitern:</p>
+<ul>
+<li><strong>UE2 (PageIndex)</strong> — fügt eine LLM-summarisierte
+   Baum-Navigation hinzu für „Übersichtsfragen"</li>
+<li><strong>UE3 (GraphRAG)</strong> — extrahiert Entitäten/Relationen
+   in einen Property-Graph (Neo4j) für strukturierte Fragen</li>
+<li><strong>UE4 (Ontology)</strong> — OWL-Ontologie in GraphDB +
+   NL→SPARQL für Reasoning-Fragen</li>
+</ul>
+
+<footer>
+UC5 RAG-Demo · UE1 Selbstlernumgebung · <em>Datenbasierte Fallstudien</em><br>
+Quellcode unter <code>backend/ingest/ue1_simple.py</code>,
+<code>backend/retrieval/simple.py</code>,
+<code>backend/retrieval/pipeline.py</code>
+</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,35 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# DB
+psycopg[binary,pool]==3.2.3
+pgvector==0.3.6
+sqlalchemy==2.0.36
+
+# HTTP / Wikipedia loader
+httpx==0.28.1
+markdownify==0.14.1
+beautifulsoup4==4.12.3
+tenacity==9.0.0
+
+# LLMs
+google-genai==0.3.0
+openai==1.57.4
+
+# Chunking helpers
+tiktoken==0.8.0
+
+# Graph (UE3)
+neo4j==5.27.0
+networkx==3.4.2
+
+# RDF / SPARQL (UE4)
+rdflib==7.1.1
+SPARQLWrapper==2.0.0
+
+# Dev / Test
+pytest==8.3.4
+pytest-asyncio==0.25.0

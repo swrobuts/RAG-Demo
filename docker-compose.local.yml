@@ -1,0 +1,60 @@
+# Local-development variant (no Traefik). Exposes the app on :8000 and
+# Postgres on :5432. The Dockerfile builds the React frontend in stage 1
+# and FastAPI serves it under /, so http://localhost:8000 gives you the UI.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+      POSTGRES_DB: ${POSTGRES_DB:-rag_apple}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag_apple}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  uc5-neo4j:
+    # Renamed from the default "neo4j" so it doesn't clash with the existing
+    # production Neo4j on the VPS's root_default network.
+    image: neo4j:5.24-community
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"   # browser UI
+      - "7687:7687"   # bolt
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:7474 > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_URL: postgresql+psycopg://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@db:5432/${POSTGRES_DB:-rag_apple}
+      NEO4J_URL: bolt://uc5-neo4j:7687
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      uc5-neo4j:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pgdata:
+  neo4jdata:
